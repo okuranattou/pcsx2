@@ -452,9 +452,20 @@ static bool Torneko3MakeCaptureDir(const char* path)
 static const char* Torneko3CaptureDir()
 {
 	const char* env = std::getenv("TORNEKO3_VU1_CAPTURE_DIR");
-	const char* dir = (env && env[0]) ? env : "C:\\Users\\asdtr\\torneko3_vu1_backend_hook_20260820";
+	const char* dir = (env && env[0]) ? env : "C:\\Users\\asdtr\\torneko3_strip0_runtime_transform_20260820";
 	Torneko3MakeCaptureDir(dir);
 	return dir;
+}
+
+static bool Torneko3PcEnabled(u32 pc)
+{
+	const char* env = std::getenv("TORNEKO3_VU1_CAPTURE_PCS");
+	if (!env || !env[0])
+		return pc == 0x0340;
+
+	char needle[16];
+	std::snprintf(needle, sizeof(needle), "%04x", pc);
+	return std::strstr(env, needle) || std::strstr(env, needle + 1);
 }
 
 static bool Torneko3TargetSignatureMatches()
@@ -463,8 +474,56 @@ static bool Torneko3TargetSignatureMatches()
 	return q00a[0] == 0x3ee5e354 && q00a[1] == 0x400d6042 && q00a[2] == 0x4026d917;
 }
 
+static bool Torneko3TargetStateMatches(u32 pc)
+{
+	if (!Torneko3PcEnabled(pc) || !Torneko3TargetSignatureMatches())
+		return false;
+
+	const VURegs& r = vuRegs[1];
+	const u32 vi5 = r.VI[5].UL & 0xffff;
+	switch (pc)
+	{
+		case 0x0138:
+		case 0x0140:
+		case 0x0170:
+		case 0x0178:
+		case 0x0180:
+		case 0x0188:
+		case 0x0208:
+		case 0x0258:
+		case 0x02f0:
+		case 0x02f8:
+		case 0x0340:
+		case 0x0348:
+		case 0x0350:
+		case 0x02e8:
+			return vi5 == 0x0088;
+		case 0x04e8:
+		case 0x04f0:
+			return vi5 == 0x008b;
+		default:
+			return false;
+	}
+}
+
 static bool& Torneko3CapturedFlag(u32 pc)
 {
+	static bool pc0138 = false;
+	static bool pc0140 = false;
+	static bool pc0170 = false;
+	static bool pc0178 = false;
+	static bool pc0180 = false;
+	static bool pc0188 = false;
+	static bool pc0208 = false;
+	static bool pc0258 = false;
+	static bool pc02e8 = false;
+	static bool pc02f0 = false;
+	static bool pc02f8 = false;
+	static bool pc0340 = false;
+	static bool pc0348 = false;
+	static bool pc0350 = false;
+	static bool pc04e8 = false;
+	static bool pc04f0 = false;
 	static bool pc0818 = false;
 	static bool pc0820 = false;
 	static bool pc0838 = false;
@@ -473,6 +532,22 @@ static bool& Torneko3CapturedFlag(u32 pc)
 
 	switch (pc)
 	{
+		case 0x0138: return pc0138;
+		case 0x0140: return pc0140;
+		case 0x0170: return pc0170;
+		case 0x0178: return pc0178;
+		case 0x0180: return pc0180;
+		case 0x0188: return pc0188;
+		case 0x0208: return pc0208;
+		case 0x0258: return pc0258;
+		case 0x02e8: return pc02e8;
+		case 0x02f0: return pc02f0;
+		case 0x02f8: return pc02f8;
+		case 0x0340: return pc0340;
+		case 0x0348: return pc0348;
+		case 0x0350: return pc0350;
+		case 0x04e8: return pc04e8;
+		case 0x04f0: return pc04f0;
 		case 0x0818: return pc0818;
 		case 0x0820: return pc0820;
 		case 0x0838: return pc0838;
@@ -485,6 +560,22 @@ static const char* Torneko3CaptureName(u32 pc)
 {
 	switch (pc)
 	{
+		case 0x0138: return "pc0138_vertex0";
+		case 0x0140: return "pc0140_vertex0";
+		case 0x0170: return "pc0170_vertex0";
+		case 0x0178: return "pc0178_vertex0";
+		case 0x0180: return "pc0180_vertex0";
+		case 0x0188: return "pc0188_vertex0";
+		case 0x0208: return "pc0208_vertex0";
+		case 0x0258: return "pc0258_vertex0";
+		case 0x02e8: return "pc02e8_vertex0";
+		case 0x02f0: return "pc02f0_vertex0";
+		case 0x02f8: return "pc02f8_vertex0";
+		case 0x0340: return "pc0340_vertex0";
+		case 0x0348: return "pc0348_vertex0";
+		case 0x0350: return "pc0350_vertex0";
+		case 0x04e8: return "pc04e8_vertex1";
+		case 0x04f0: return "pc04f0_vertex1";
 		case 0x0818: return "xtop_pc0818";
 		case 0x0820: return "xtop_pc0820";
 		case 0x0838: return "target_pc0838";
@@ -509,7 +600,7 @@ static void Torneko3WriteMemQwordJson(std::FILE* fp, const char* name, u32 qaddr
 void Torneko3DumpTargetVU1State(u32 pc)
 {
 	bool& captured = Torneko3CapturedFlag(pc);
-	if (captured || !Torneko3TargetSignatureMatches())
+	if (captured || !Torneko3TargetStateMatches(pc))
 		return;
 	captured = true;
 
@@ -539,12 +630,20 @@ void Torneko3DumpTargetVU1State(u32 pc)
 	const microVU& m = microVU1;
 	std::fprintf(fp, "{\n");
 	std::fprintf(fp, "  \"pc_before\": \"0x%04x\",\n", pc);
+	std::fprintf(fp, "  \"capture_stage\": \"strip0_runtime_transform\",\n");
+	std::fprintf(fp, "  \"capture_pcs_env\": \"%s\",\n", std::getenv("TORNEKO3_VU1_CAPTURE_PCS") ? std::getenv("TORNEKO3_VU1_CAPTURE_PCS") : "");
 	std::fprintf(fp, "  \"target_signature\": {\"q00a_xyz_raw\": [\"0x3ee5e354\", \"0x400d6042\", \"0x4026d917\"]},\n");
 	std::fprintf(fp, "  \"vu1_memory_file\": \"%s_vumem.bin\",\n", name);
 	std::fprintf(fp, "  \"qwords\": {\n");
 	Torneko3WriteMemQwordJson(fp, "q0x008", 0x008); std::fprintf(fp, ",\n");
 	Torneko3WriteMemQwordJson(fp, "q0x009", 0x009); std::fprintf(fp, ",\n");
-	Torneko3WriteMemQwordJson(fp, "q0x00a", 0x00a); std::fprintf(fp, "\n");
+	Torneko3WriteMemQwordJson(fp, "q0x00a", 0x00a); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x088", 0x088); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x089", 0x089); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x08a", 0x08a); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x08b", 0x08b); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x08c", 0x08c); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x08d", 0x08d); std::fprintf(fp, "\n");
 	std::fprintf(fp, "  },\n");
 	std::fprintf(fp, "  \"vi\": {\n");
 	for (u32 i = 0; i < 32; i++)

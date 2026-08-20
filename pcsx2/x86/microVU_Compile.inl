@@ -871,7 +871,14 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 
 	for (; x < endCount; x++)
 	{
-		if (isVU1 && (xPC == 0x0818 || xPC == 0x0820 || xPC == 0x0838 || xPC == 0x0840))
+		if (isVU1 && (
+			xPC == 0x0138 || xPC == 0x0140 ||
+			xPC == 0x0170 || xPC == 0x0178 || xPC == 0x0180 || xPC == 0x0188 ||
+			xPC == 0x0208 || xPC == 0x0258 ||
+			xPC == 0x02e8 || xPC == 0x02f0 || xPC == 0x02f8 ||
+			xPC == 0x0340 || xPC == 0x0348 || xPC == 0x0350 ||
+			xPC == 0x04e8 || xPC == 0x04f0 ||
+			xPC == 0x0818 || xPC == 0x0820 || xPC == 0x0838 || xPC == 0x0840))
 		{
 			mVU.regAlloc->flushAll(false);
 			mVUbackupRegs(mVU, true);
