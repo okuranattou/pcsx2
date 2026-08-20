@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <cctype>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -457,31 +458,192 @@ static const char* Torneko3CaptureDir()
 	return dir;
 }
 
+struct Torneko3CaptureConfig
+{
+	bool loaded = false;
+	char dir[260] = "C:\\Users\\asdtr\\torneko3_strip0_runtime_transform_20260820";
+	u32 pcs[64] = {0x0340};
+	u32 pc_count = 1;
+	bool require_q00a_xyz = true;
+	u32 q00a_xyz[3] = {0x3ee5e354, 0x400d6042, 0x4026d917};
+	bool require_vi5 = true;
+	u32 vi5 = 0x0088;
+	bool require_gif_tag = false;
+	u32 gif_qword = 0x087;
+	u32 gif_nloop = 37;
+	u32 gif_flg = 0;
+	u32 gif_nreg = 3;
+	u64 gif_regs_mask = 0xfffull;
+	u64 gif_regs_value = 0x412ull;
+	u32 max_captures_per_pc = 16;
+};
+
+static char* Torneko3Trim(char* s)
+{
+	while (*s && std::isspace(static_cast<unsigned char>(*s)))
+		s++;
+	char* end = s + std::strlen(s);
+	while (end > s && std::isspace(static_cast<unsigned char>(end[-1])))
+		*--end = 0;
+	return s;
+}
+
+static bool Torneko3ParseBool(const char* s, bool def)
+{
+	if (!s || !s[0])
+		return def;
+	return std::strcmp(s, "1") == 0 || StringUtil::Strcasecmp(s, "true") == 0 || StringUtil::Strcasecmp(s, "yes") == 0 || StringUtil::Strcasecmp(s, "on") == 0;
+}
+
+static u32 Torneko3ParseU32(const char* s, u32 def)
+{
+	if (!s || !s[0])
+		return def;
+	return static_cast<u32>(std::strtoul(s, nullptr, 0));
+}
+
+static u64 Torneko3ParseU64(const char* s, u64 def)
+{
+	if (!s || !s[0])
+		return def;
+	return static_cast<u64>(std::strtoull(s, nullptr, 0));
+}
+
+static void Torneko3ParsePcList(Torneko3CaptureConfig& cfg, char* value)
+{
+	constexpr u32 MAX_PCS = sizeof(cfg.pcs) / sizeof(cfg.pcs[0]);
+	cfg.pc_count = 0;
+	for (char* tok = std::strtok(value, ", \t"); tok && cfg.pc_count < MAX_PCS; tok = std::strtok(nullptr, ", \t"))
+		cfg.pcs[cfg.pc_count++] = Torneko3ParseU32(tok, 0);
+	if (cfg.pc_count == 0)
+	{
+		cfg.pcs[0] = 0x0340;
+		cfg.pc_count = 1;
+	}
+}
+
+static const Torneko3CaptureConfig& Torneko3Config()
+{
+	static Torneko3CaptureConfig cfg;
+	if (cfg.loaded)
+		return cfg;
+	cfg.loaded = true;
+
+	const char* dir_env = std::getenv("TORNEKO3_VU1_CAPTURE_DIR");
+	if (dir_env && dir_env[0])
+		std::snprintf(cfg.dir, sizeof(cfg.dir), "%s", dir_env);
+
+	const char* pcs_env = std::getenv("TORNEKO3_VU1_CAPTURE_PCS");
+	if (pcs_env && pcs_env[0])
+	{
+		char tmp[512];
+		std::snprintf(tmp, sizeof(tmp), "%s", pcs_env);
+		Torneko3ParsePcList(cfg, tmp);
+	}
+
+	char ini_path[512];
+	const char* ini_env = std::getenv("TORNEKO3_VU1_CAPTURE_INI");
+	if (ini_env && ini_env[0])
+	{
+		std::snprintf(ini_path, sizeof(ini_path), "%s", ini_env);
+	}
+	else
+	{
+#ifdef _WIN32
+		std::snprintf(ini_path, sizeof(ini_path), "%s\\torneko3_vu1_capture.ini", cfg.dir);
+#else
+		std::snprintf(ini_path, sizeof(ini_path), "%s/torneko3_vu1_capture.ini", cfg.dir);
+#endif
+	}
+
+	if (std::FILE* fp = std::fopen(ini_path, "rb"))
+	{
+		char line[1024];
+		while (std::fgets(line, sizeof(line), fp))
+		{
+			char* comment = std::strpbrk(line, "#;");
+			if (comment)
+				*comment = 0;
+			char* eq = std::strchr(line, '=');
+			if (!eq)
+				continue;
+			*eq = 0;
+			char* key = Torneko3Trim(line);
+			char* value = Torneko3Trim(eq + 1);
+			if (!key[0])
+				continue;
+
+			if (StringUtil::Strcasecmp(key, "capture_dir") == 0)
+				std::snprintf(cfg.dir, sizeof(cfg.dir), "%s", value);
+			else if (StringUtil::Strcasecmp(key, "pcs") == 0 || StringUtil::Strcasecmp(key, "capture_pcs") == 0)
+				Torneko3ParsePcList(cfg, value);
+			else if (StringUtil::Strcasecmp(key, "require_q00a_xyz") == 0)
+				cfg.require_q00a_xyz = Torneko3ParseBool(value, cfg.require_q00a_xyz);
+			else if (StringUtil::Strcasecmp(key, "q00a_x") == 0)
+				cfg.q00a_xyz[0] = Torneko3ParseU32(value, cfg.q00a_xyz[0]);
+			else if (StringUtil::Strcasecmp(key, "q00a_y") == 0)
+				cfg.q00a_xyz[1] = Torneko3ParseU32(value, cfg.q00a_xyz[1]);
+			else if (StringUtil::Strcasecmp(key, "q00a_z") == 0)
+				cfg.q00a_xyz[2] = Torneko3ParseU32(value, cfg.q00a_xyz[2]);
+			else if (StringUtil::Strcasecmp(key, "require_vi5") == 0)
+				cfg.require_vi5 = Torneko3ParseBool(value, cfg.require_vi5);
+			else if (StringUtil::Strcasecmp(key, "vi5") == 0)
+				cfg.vi5 = Torneko3ParseU32(value, cfg.vi5);
+			else if (StringUtil::Strcasecmp(key, "require_gif_tag") == 0)
+				cfg.require_gif_tag = Torneko3ParseBool(value, cfg.require_gif_tag);
+			else if (StringUtil::Strcasecmp(key, "gif_qword") == 0)
+				cfg.gif_qword = Torneko3ParseU32(value, cfg.gif_qword);
+			else if (StringUtil::Strcasecmp(key, "gif_nloop") == 0)
+				cfg.gif_nloop = Torneko3ParseU32(value, cfg.gif_nloop);
+			else if (StringUtil::Strcasecmp(key, "gif_flg") == 0)
+				cfg.gif_flg = Torneko3ParseU32(value, cfg.gif_flg);
+			else if (StringUtil::Strcasecmp(key, "gif_nreg") == 0)
+				cfg.gif_nreg = Torneko3ParseU32(value, cfg.gif_nreg);
+			else if (StringUtil::Strcasecmp(key, "gif_regs_mask") == 0)
+				cfg.gif_regs_mask = Torneko3ParseU64(value, cfg.gif_regs_mask);
+			else if (StringUtil::Strcasecmp(key, "gif_regs_value") == 0)
+				cfg.gif_regs_value = Torneko3ParseU64(value, cfg.gif_regs_value);
+			else if (StringUtil::Strcasecmp(key, "max_captures_per_pc") == 0)
+				cfg.max_captures_per_pc = Torneko3ParseU32(value, cfg.max_captures_per_pc);
+		}
+		std::fclose(fp);
+	}
+
+	Torneko3MakeCaptureDir(cfg.dir);
+	return cfg;
+}
+
 static bool Torneko3PcEnabled(u32 pc)
 {
-	const char* env = std::getenv("TORNEKO3_VU1_CAPTURE_PCS");
-	if (!env || !env[0])
-		return pc == 0x0340;
-
-	char needle[16];
-	std::snprintf(needle, sizeof(needle), "%04x", pc);
-	return std::strstr(env, needle) || std::strstr(env, needle + 1);
+	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	for (u32 i = 0; i < cfg.pc_count; i++)
+	{
+		if (cfg.pcs[i] == pc)
+			return true;
+	}
+	return false;
 }
 
 static bool Torneko3TargetSignatureMatches()
 {
+	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	if (!cfg.require_q00a_xyz)
+		return true;
 	const u32* q00a = reinterpret_cast<const u32*>(&vuRegs[1].Mem[0x00a * 16]);
-	return q00a[0] == 0x3ee5e354 && q00a[1] == 0x400d6042 && q00a[2] == 0x4026d917;
+	return q00a[0] == cfg.q00a_xyz[0] && q00a[1] == cfg.q00a_xyz[1] && q00a[2] == cfg.q00a_xyz[2];
 }
 
 static bool Torneko3Strip0PacketSignatureMatches()
 {
-	const u64* q087 = reinterpret_cast<const u64*>(&vuRegs[1].Mem[0x087 * 16]);
+	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	if (!cfg.require_gif_tag)
+		return true;
+	const u64* q087 = reinterpret_cast<const u64*>(&vuRegs[1].Mem[(cfg.gif_qword & 0x3ff) * 16]);
 	const u32 nloop = static_cast<u32>(q087[0] & 0x7fff);
 	const u32 flg = static_cast<u32>((q087[0] >> 58) & 0x3);
 	const u32 nreg_raw = static_cast<u32>((q087[0] >> 60) & 0xf);
 	const u64 regs = q087[1];
-	return nloop == 37 && flg == 0 && nreg_raw == 3 && (regs & 0xfffull) == 0x412ull;
+	return nloop == cfg.gif_nloop && flg == cfg.gif_flg && nreg_raw == cfg.gif_nreg && (regs & cfg.gif_regs_mask) == cfg.gif_regs_value;
 }
 
 static bool Torneko3TargetStateMatches(u32 pc)
@@ -491,54 +653,33 @@ static bool Torneko3TargetStateMatches(u32 pc)
 
 	const VURegs& r = vuRegs[1];
 	const u32 vi5 = r.VI[5].UL & 0xffff;
-	switch (pc)
-	{
-		case 0x0138:
-		case 0x0140:
-		case 0x0170:
-		case 0x0178:
-		case 0x0180:
-		case 0x0188:
-		case 0x0208:
-		case 0x0258:
-		case 0x02f0:
-		case 0x02f8:
-		case 0x0340:
-		case 0x0348:
-		case 0x0350:
-		case 0x02e8:
-			return vi5 == 0x0088;
-		case 0x04e8:
-		case 0x04f0:
-			return vi5 == 0x008b;
-		default:
-			return false;
-	}
+	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	return !cfg.require_vi5 || vi5 == cfg.vi5;
 }
 
-static bool& Torneko3CapturedFlag(u32 pc)
+static u32& Torneko3CaptureCount(u32 pc)
 {
-	static bool pc0138 = false;
-	static bool pc0140 = false;
-	static bool pc0170 = false;
-	static bool pc0178 = false;
-	static bool pc0180 = false;
-	static bool pc0188 = false;
-	static bool pc0208 = false;
-	static bool pc0258 = false;
-	static bool pc02e8 = false;
-	static bool pc02f0 = false;
-	static bool pc02f8 = false;
-	static bool pc0340 = false;
-	static bool pc0348 = false;
-	static bool pc0350 = false;
-	static bool pc04e8 = false;
-	static bool pc04f0 = false;
-	static bool pc0818 = false;
-	static bool pc0820 = false;
-	static bool pc0838 = false;
-	static bool pc0840 = false;
-	static bool unknown = true;
+	static u32 pc0138 = 0;
+	static u32 pc0140 = 0;
+	static u32 pc0170 = 0;
+	static u32 pc0178 = 0;
+	static u32 pc0180 = 0;
+	static u32 pc0188 = 0;
+	static u32 pc0208 = 0;
+	static u32 pc0258 = 0;
+	static u32 pc02e8 = 0;
+	static u32 pc02f0 = 0;
+	static u32 pc02f8 = 0;
+	static u32 pc0340 = 0;
+	static u32 pc0348 = 0;
+	static u32 pc0350 = 0;
+	static u32 pc04e8 = 0;
+	static u32 pc04f0 = 0;
+	static u32 pc0818 = 0;
+	static u32 pc0820 = 0;
+	static u32 pc0838 = 0;
+	static u32 pc0840 = 0;
+	static u32 unknown = 0;
 
 	switch (pc)
 	{
@@ -609,21 +750,22 @@ static void Torneko3WriteMemQwordJson(std::FILE* fp, const char* name, u32 qaddr
 
 void Torneko3DumpTargetVU1State(u32 pc)
 {
-	bool& captured = Torneko3CapturedFlag(pc);
-	if (captured || !Torneko3TargetStateMatches(pc))
+	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	u32& capture_count = Torneko3CaptureCount(pc);
+	if (capture_count >= cfg.max_captures_per_pc || !Torneko3TargetStateMatches(pc))
 		return;
-	captured = true;
+	const u32 capture_index = capture_count++;
 
-	const char* dir = Torneko3CaptureDir();
+	const char* dir = cfg.dir;
 	const char* name = Torneko3CaptureName(pc);
 	char json_path[512];
 	char mem_path[512];
 #ifdef _WIN32
-	std::snprintf(json_path, sizeof(json_path), "%s\\%s_regs.json", dir, name);
-	std::snprintf(mem_path, sizeof(mem_path), "%s\\%s_vumem.bin", dir, name);
+	std::snprintf(json_path, sizeof(json_path), "%s\\%s_%03u_regs.json", dir, name, capture_index);
+	std::snprintf(mem_path, sizeof(mem_path), "%s\\%s_%03u_vumem.bin", dir, name, capture_index);
 #else
-	std::snprintf(json_path, sizeof(json_path), "%s/%s_regs.json", dir, name);
-	std::snprintf(mem_path, sizeof(mem_path), "%s/%s_vumem.bin", dir, name);
+	std::snprintf(json_path, sizeof(json_path), "%s/%s_%03u_regs.json", dir, name, capture_index);
+	std::snprintf(mem_path, sizeof(mem_path), "%s/%s_%03u_vumem.bin", dir, name, capture_index);
 #endif
 
 	if (std::FILE* mem = std::fopen(mem_path, "wb"))
@@ -640,10 +782,14 @@ void Torneko3DumpTargetVU1State(u32 pc)
 	const microVU& m = microVU1;
 	std::fprintf(fp, "{\n");
 	std::fprintf(fp, "  \"pc_before\": \"0x%04x\",\n", pc);
+	std::fprintf(fp, "  \"capture_index\": %u,\n", capture_index);
 	std::fprintf(fp, "  \"capture_stage\": \"strip0_runtime_transform\",\n");
-	std::fprintf(fp, "  \"capture_pcs_env\": \"%s\",\n", std::getenv("TORNEKO3_VU1_CAPTURE_PCS") ? std::getenv("TORNEKO3_VU1_CAPTURE_PCS") : "");
-	std::fprintf(fp, "  \"target_signature\": {\"q00a_xyz_raw\": [\"0x3ee5e354\", \"0x400d6042\", \"0x4026d917\"]},\n");
-	std::fprintf(fp, "  \"vu1_memory_file\": \"%s_vumem.bin\",\n", name);
+	std::fprintf(fp, "  \"config\": {\"require_q00a_xyz\": %s, \"require_vi5\": %s, \"vi5\": \"0x%04x\", \"require_gif_tag\": %s, \"gif_qword\": \"0x%03x\", \"gif_nloop\": %u, \"gif_flg\": %u, \"gif_nreg\": %u, \"gif_regs_mask\": \"0x%llx\", \"gif_regs_value\": \"0x%llx\", \"max_captures_per_pc\": %u},\n",
+		cfg.require_q00a_xyz ? "true" : "false", cfg.require_vi5 ? "true" : "false", cfg.vi5,
+		cfg.require_gif_tag ? "true" : "false", cfg.gif_qword, cfg.gif_nloop, cfg.gif_flg, cfg.gif_nreg,
+		static_cast<unsigned long long>(cfg.gif_regs_mask), static_cast<unsigned long long>(cfg.gif_regs_value), cfg.max_captures_per_pc);
+	std::fprintf(fp, "  \"target_signature\": {\"q00a_xyz_raw\": [\"0x%08x\", \"0x%08x\", \"0x%08x\"]},\n", cfg.q00a_xyz[0], cfg.q00a_xyz[1], cfg.q00a_xyz[2]);
+	std::fprintf(fp, "  \"vu1_memory_file\": \"%s_%03u_vumem.bin\",\n", name, capture_index);
 	std::fprintf(fp, "  \"qwords\": {\n");
 	Torneko3WriteMemQwordJson(fp, "q0x008", 0x008); std::fprintf(fp, ",\n");
 	Torneko3WriteMemQwordJson(fp, "q0x009", 0x009); std::fprintf(fp, ",\n");
