@@ -44,6 +44,10 @@ on:
         required: false
         type: boolean
         default: false
+      prebuiltDepsUrl:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build_windows_qt:
@@ -120,8 +124,30 @@ jobs:
           path: deps
           key: ${{ inputs.os }} ${{ inputs.platform }} deps ${{ hashFiles('.github/workflows/scripts/windows/build-dependencies.bat', '.github/workflows/scripts/common/*.patch') }}
 
+      - name: Download Prebuilt Dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true' && inputs.prebuiltDepsUrl != ''
+        shell: cmd
+        run: |
+          aria2c -o deps.7z "${{ inputs.prebuiltDepsUrl }}" || exit /b
+          if exist deps-prebuilt rmdir /S /Q deps-prebuilt
+          mkdir deps-prebuilt || exit /b
+          7z x deps.7z -odeps-prebuilt -y || exit /b
+          if exist deps rmdir /S /Q deps
+          if exist deps-prebuilt\deps (
+            xcopy deps-prebuilt\deps deps /E /I /Y || exit /b
+          ) else (
+            xcopy deps-prebuilt deps /E /I /Y || exit /b
+          )
+          if not exist deps\include (
+            echo Prebuilt dependencies did not provide deps\include.
+            exit /b 1
+          )
+          if not exist deps\lib\zlib.lib if exist deps\lib\z.lib copy deps\lib\z.lib deps\lib\zlib.lib || exit /b
+          if not exist deps\bin\zlib1.dll if exist deps\bin\z.dll copy deps\bin\z.dll deps\bin\zlib1.dll || exit /b
+          if exist deps\include\c4 rmdir /S /Q deps\include\c4
+
       - name: Build Dependencies
-        if: steps.cache-deps.outputs.cache-hit != 'true'
+        if: steps.cache-deps.outputs.cache-hit != 'true' && inputs.prebuiltDepsUrl == ''
         env:
           DEBUG: 0
         run: .github/workflows/scripts/windows/build-dependencies.bat

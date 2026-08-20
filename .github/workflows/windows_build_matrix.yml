@@ -4,6 +4,7 @@ on:
   push:
     branches-ignore:
       - "l10n_master"
+      - "torneko3-vu1-instrumented-build"
   pull_request:
     branches:
       - master

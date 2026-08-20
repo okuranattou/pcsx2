@@ -7,6 +7,17 @@
 #include "common/Perf.h"
 #include "common/StringUtil.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cerrno>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 //------------------------------------------------------------------
 // Micro VU - Main Functions
 //------------------------------------------------------------------
@@ -420,6 +431,154 @@ bool SaveStateBase::vuJITFreeze()
 	Freeze(microVU0.prog.lpState);
 	Freeze(microVU1.prog.lpState);
 	return IsOkay();
+}
+
+static float Torneko3RawToFloat(u32 v)
+{
+	float f;
+	std::memcpy(&f, &v, sizeof(f));
+	return f;
+}
+
+static bool Torneko3MakeCaptureDir(const char* path)
+{
+#ifdef _WIN32
+	return _mkdir(path) == 0 || errno == EEXIST;
+#else
+	return mkdir(path, 0755) == 0 || errno == EEXIST;
+#endif
+}
+
+static const char* Torneko3CaptureDir()
+{
+	const char* env = std::getenv("TORNEKO3_VU1_CAPTURE_DIR");
+	const char* dir = (env && env[0]) ? env : "C:\\Users\\asdtr\\torneko3_vu1_backend_hook_20260820";
+	Torneko3MakeCaptureDir(dir);
+	return dir;
+}
+
+static bool Torneko3TargetSignatureMatches()
+{
+	const u32* q00a = reinterpret_cast<const u32*>(&vuRegs[1].Mem[0x00a * 16]);
+	return q00a[0] == 0x3ee5e354 && q00a[1] == 0x400d6042 && q00a[2] == 0x4026d917;
+}
+
+static bool& Torneko3CapturedFlag(u32 pc)
+{
+	static bool pc0818 = false;
+	static bool pc0820 = false;
+	static bool pc0838 = false;
+	static bool pc0840 = false;
+	static bool unknown = true;
+
+	switch (pc)
+	{
+		case 0x0818: return pc0818;
+		case 0x0820: return pc0820;
+		case 0x0838: return pc0838;
+		case 0x0840: return pc0840;
+		default: return unknown;
+	}
+}
+
+static const char* Torneko3CaptureName(u32 pc)
+{
+	switch (pc)
+	{
+		case 0x0818: return "xtop_pc0818";
+		case 0x0820: return "xtop_pc0820";
+		case 0x0838: return "target_pc0838";
+		case 0x0840: return "target_pc0840";
+		default: return "unknown_pc";
+	}
+}
+
+static void Torneko3WriteVectorJson(std::FILE* fp, const char* name, const VECTOR& v)
+{
+	std::fprintf(fp, "    \"%s\": {\"raw\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"], \"float\": [%.9g, %.9g, %.9g, %.9g]}",
+		name, v.UL[0], v.UL[1], v.UL[2], v.UL[3], v.F[0], v.F[1], v.F[2], v.F[3]);
+}
+
+static void Torneko3WriteMemQwordJson(std::FILE* fp, const char* name, u32 qaddr)
+{
+	const u32* q = reinterpret_cast<const u32*>(&vuRegs[1].Mem[(qaddr & 0x3ff) * 16]);
+	std::fprintf(fp, "    \"%s\": {\"qword\": \"0x%03x\", \"raw\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"], \"float\": [%.9g, %.9g, %.9g, %.9g]}",
+		name, qaddr, q[0], q[1], q[2], q[3], Torneko3RawToFloat(q[0]), Torneko3RawToFloat(q[1]), Torneko3RawToFloat(q[2]), Torneko3RawToFloat(q[3]));
+}
+
+void Torneko3DumpTargetVU1State(u32 pc)
+{
+	bool& captured = Torneko3CapturedFlag(pc);
+	if (captured || !Torneko3TargetSignatureMatches())
+		return;
+	captured = true;
+
+	const char* dir = Torneko3CaptureDir();
+	const char* name = Torneko3CaptureName(pc);
+	char json_path[512];
+	char mem_path[512];
+#ifdef _WIN32
+	std::snprintf(json_path, sizeof(json_path), "%s\\%s_regs.json", dir, name);
+	std::snprintf(mem_path, sizeof(mem_path), "%s\\%s_vumem.bin", dir, name);
+#else
+	std::snprintf(json_path, sizeof(json_path), "%s/%s_regs.json", dir, name);
+	std::snprintf(mem_path, sizeof(mem_path), "%s/%s_vumem.bin", dir, name);
+#endif
+
+	if (std::FILE* mem = std::fopen(mem_path, "wb"))
+	{
+		std::fwrite(vuRegs[1].Mem, 1, 0x4000, mem);
+		std::fclose(mem);
+	}
+
+	std::FILE* fp = std::fopen(json_path, "wb");
+	if (!fp)
+		return;
+
+	const VURegs& r = vuRegs[1];
+	const microVU& m = microVU1;
+	std::fprintf(fp, "{\n");
+	std::fprintf(fp, "  \"pc_before\": \"0x%04x\",\n", pc);
+	std::fprintf(fp, "  \"target_signature\": {\"q00a_xyz_raw\": [\"0x3ee5e354\", \"0x400d6042\", \"0x4026d917\"]},\n");
+	std::fprintf(fp, "  \"vu1_memory_file\": \"%s_vumem.bin\",\n", name);
+	std::fprintf(fp, "  \"qwords\": {\n");
+	Torneko3WriteMemQwordJson(fp, "q0x008", 0x008); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x009", 0x009); std::fprintf(fp, ",\n");
+	Torneko3WriteMemQwordJson(fp, "q0x00a", 0x00a); std::fprintf(fp, "\n");
+	std::fprintf(fp, "  },\n");
+	std::fprintf(fp, "  \"vi\": {\n");
+	for (u32 i = 0; i < 32; i++)
+	{
+		std::fprintf(fp, "    \"vi%u\": {\"raw\": \"0x%08x\", \"u32\": %u}%s\n", i, r.VI[i].UL, r.VI[i].UL, (i == 31) ? "" : ",");
+	}
+	std::fprintf(fp, "  },\n");
+	std::fprintf(fp, "  \"vf\": {\n");
+	for (u32 i = 0; i < 32; i++)
+	{
+		char key[16];
+		std::snprintf(key, sizeof(key), "vf%u", i);
+		Torneko3WriteVectorJson(fp, key, r.VF[i]);
+		std::fprintf(fp, "%s\n", (i == 31) ? "" : ",");
+	}
+	std::fprintf(fp, "  },\n");
+	std::fprintf(fp, "  \"special\": {\n");
+	Torneko3WriteVectorJson(fp, "acc", r.ACC); std::fprintf(fp, ",\n");
+	std::fprintf(fp, "    \"q\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.q.UL, r.q.F);
+	std::fprintf(fp, "    \"p\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.p.UL, r.p.F);
+	std::fprintf(fp, "    \"pending_q\": \"0x%08x\",\n", r.pending_q);
+	std::fprintf(fp, "    \"pending_p\": \"0x%08x\"\n", r.pending_p);
+	std::fprintf(fp, "  },\n");
+	std::fprintf(fp, "  \"flags\": {\n");
+	std::fprintf(fp, "    \"macflag\": \"0x%08x\", \"statusflag\": \"0x%08x\", \"clipflag\": \"0x%08x\",\n", r.macflag, r.statusflag, r.clipflag);
+	std::fprintf(fp, "    \"micro_macflags\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n", r.micro_macflags[0], r.micro_macflags[1], r.micro_macflags[2], r.micro_macflags[3]);
+	std::fprintf(fp, "    \"micro_clipflags\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n", r.micro_clipflags[0], r.micro_clipflags[1], r.micro_clipflags[2], r.micro_clipflags[3]);
+	std::fprintf(fp, "    \"micro_statusflags\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n", r.micro_statusflags[0], r.micro_statusflags[1], r.micro_statusflags[2], r.micro_statusflags[3]);
+	std::fprintf(fp, "    \"mvu_macFlag\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n", m.macFlag[0], m.macFlag[1], m.macFlag[2], m.macFlag[3]);
+	std::fprintf(fp, "    \"mvu_clipFlag\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n", m.clipFlag[0], m.clipFlag[1], m.clipFlag[2], m.clipFlag[3]);
+	std::fprintf(fp, "    \"mvu_statFlag\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"]\n", m.statFlag[0], m.statFlag[1], m.statFlag[2], m.statFlag[3]);
+	std::fprintf(fp, "  }\n");
+	std::fprintf(fp, "}\n");
+	std::fclose(fp);
 }
 
 #if 0

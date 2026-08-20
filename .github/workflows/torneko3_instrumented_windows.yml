@@ -1,0 +1,21 @@
+name: Torneko3 Instrumented Windows Build
+
+on:
+  push:
+    branches:
+      - "torneko3-vu1-instrumented-build"
+  workflow_dispatch:
+
+jobs:
+  build_instrumented_avx2:
+    name: Instrumented AVX2
+    uses: ./.github/workflows/windows_build_qt.yml
+    with:
+      jobName: "Torneko3 Instrumented AVX2"
+      artifactPrefixName: "torneko3-instrumented-pcsx2-v2.6.3-windows-Qt-x64-avx2"
+      configuration: Release AVX2
+      simd: "AVX2"
+      fetchTags: true
+      stableBuild: true
+      prebuiltDepsUrl: "https://github.com/PCSX2/pcsx2-windows-dependencies/releases/download/latest-windows-dependencies/pcsx2-windows-dependencies.7z"
+    secrets: inherit

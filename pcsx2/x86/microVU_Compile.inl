@@ -871,6 +871,14 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 
 	for (; x < endCount; x++)
 	{
+		if (isVU1 && (xPC == 0x0818 || xPC == 0x0820 || xPC == 0x0838 || xPC == 0x0840))
+		{
+			mVU.regAlloc->flushAll(false);
+			mVUbackupRegs(mVU, true);
+			xFastCall(Torneko3DumpTargetVU1State, xPC);
+			mVUrestoreRegs(mVU, true);
+		}
+
 #if 0
 		if (mVU.index == 1 && (x == 0 || true))
 		{
