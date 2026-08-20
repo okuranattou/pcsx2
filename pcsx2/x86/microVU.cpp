@@ -474,9 +474,19 @@ static bool Torneko3TargetSignatureMatches()
 	return q00a[0] == 0x3ee5e354 && q00a[1] == 0x400d6042 && q00a[2] == 0x4026d917;
 }
 
+static bool Torneko3Strip0PacketSignatureMatches()
+{
+	const u64* q087 = reinterpret_cast<const u64*>(&vuRegs[1].Mem[0x087 * 16]);
+	const u32 nloop = static_cast<u32>(q087[0] & 0x7fff);
+	const u32 flg = static_cast<u32>((q087[0] >> 58) & 0x3);
+	const u32 nreg_raw = static_cast<u32>((q087[0] >> 60) & 0xf);
+	const u64 regs = q087[1];
+	return nloop == 37 && flg == 0 && nreg_raw == 3 && regs == 0x0000000000000412ull;
+}
+
 static bool Torneko3TargetStateMatches(u32 pc)
 {
-	if (!Torneko3PcEnabled(pc) || !Torneko3TargetSignatureMatches())
+	if (!Torneko3PcEnabled(pc) || !Torneko3TargetSignatureMatches() || !Torneko3Strip0PacketSignatureMatches())
 		return false;
 
 	const VURegs& r = vuRegs[1];
