@@ -481,7 +481,7 @@ static bool Torneko3Strip0PacketSignatureMatches()
 	const u32 flg = static_cast<u32>((q087[0] >> 58) & 0x3);
 	const u32 nreg_raw = static_cast<u32>((q087[0] >> 60) & 0xf);
 	const u64 regs = q087[1];
-	return nloop == 37 && flg == 0 && nreg_raw == 3 && regs == 0x0000000000000412ull;
+	return nloop == 37 && flg == 0 && nreg_raw == 3 && (regs & 0xfffull) == 0x412ull;
 }
 
 static bool Torneko3TargetStateMatches(u32 pc)
