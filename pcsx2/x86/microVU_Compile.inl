@@ -880,6 +880,7 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 			xPC == 0x04e8 || xPC == 0x04f0 ||
 			xPC == 0x0818 || xPC == 0x0820 || xPC == 0x0838 || xPC == 0x0840))
 		{
+			Torneko3TraceCompileVU1State(xPC);
 			mVU.regAlloc->flushAll(false);
 			mVUbackupRegs(mVU, true);
 			xFastCall(Torneko3DumpTargetVU1State, xPC);

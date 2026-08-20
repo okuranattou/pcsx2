@@ -273,6 +273,7 @@ alignas(16) microVU microVU1;
 int mVUdebugNow = 0;
 extern void DumpVUState(u32 n, u32 pc);
 extern void Torneko3DumpTargetVU1State(u32 pc);
+extern void Torneko3TraceCompileVU1State(u32 pc);
 
 // Main Functions
 extern void mVUclear(mV, u32, u32);

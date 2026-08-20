@@ -692,6 +692,23 @@ static void Torneko3TraceAttempt(u32 pc, const char* result)
 	}
 }
 
+void Torneko3TraceCompileVU1State(u32 pc)
+{
+	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	char path[512];
+#ifdef _WIN32
+	std::snprintf(path, sizeof(path), "%s\\torneko3_vu1_compile.log", cfg.dir);
+#else
+	std::snprintf(path, sizeof(path), "%s/torneko3_vu1_compile.log", cfg.dir);
+#endif
+	if (std::FILE* fp = std::fopen(path, "ab"))
+	{
+		std::fprintf(fp, "pc=0x%04x cfgpcs=%u req_q00a=%d req_vi5=%d req_gif=%d\n",
+			pc, cfg.pc_count, cfg.require_q00a_xyz ? 1 : 0, cfg.require_vi5 ? 1 : 0, cfg.require_gif_tag ? 1 : 0);
+		std::fclose(fp);
+	}
+}
+
 static u32& Torneko3CaptureCount(u32 pc)
 {
 	static u32 pc0138 = 0;
