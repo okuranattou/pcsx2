@@ -476,6 +476,7 @@ struct Torneko3CaptureConfig
 	u64 gif_regs_mask = 0xfffull;
 	u64 gif_regs_value = 0x412ull;
 	u32 max_captures_per_pc = 16;
+	char ini_path[512] = {};
 };
 
 static char* Torneko3Trim(char* s)
@@ -610,6 +611,24 @@ static const Torneko3CaptureConfig& Torneko3Config()
 	}
 
 	Torneko3MakeCaptureDir(cfg.dir);
+	std::snprintf(cfg.ini_path, sizeof(cfg.ini_path), "%s", ini_path);
+	{
+		char loaded_path[512];
+#ifdef _WIN32
+		std::snprintf(loaded_path, sizeof(loaded_path), "%s\\torneko3_vu1_config_loaded.txt", cfg.dir);
+#else
+		std::snprintf(loaded_path, sizeof(loaded_path), "%s/torneko3_vu1_config_loaded.txt", cfg.dir);
+#endif
+		if (std::FILE* fp = std::fopen(loaded_path, "wb"))
+		{
+			std::fprintf(fp, "ini=%s\n", cfg.ini_path);
+			std::fprintf(fp, "pcs=%u\n", cfg.pc_count);
+			std::fprintf(fp, "require_q00a_xyz=%d\n", cfg.require_q00a_xyz ? 1 : 0);
+			std::fprintf(fp, "require_vi5=%d\n", cfg.require_vi5 ? 1 : 0);
+			std::fprintf(fp, "require_gif_tag=%d\n", cfg.require_gif_tag ? 1 : 0);
+			std::fclose(fp);
+		}
+	}
 	return cfg;
 }
 
@@ -655,6 +674,22 @@ static bool Torneko3TargetStateMatches(u32 pc)
 	const u32 vi5 = r.VI[5].UL & 0xffff;
 	const Torneko3CaptureConfig& cfg = Torneko3Config();
 	return !cfg.require_vi5 || vi5 == cfg.vi5;
+}
+
+static void Torneko3TraceAttempt(u32 pc, const char* result)
+{
+	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	char path[512];
+#ifdef _WIN32
+	std::snprintf(path, sizeof(path), "%s\\torneko3_vu1_trace.log", cfg.dir);
+#else
+	std::snprintf(path, sizeof(path), "%s/torneko3_vu1_trace.log", cfg.dir);
+#endif
+	if (std::FILE* fp = std::fopen(path, "ab"))
+	{
+		std::fprintf(fp, "pc=0x%04x result=%s vi5=0x%04x\n", pc, result, vuRegs[1].VI[5].UL & 0xffff);
+		std::fclose(fp);
+	}
 }
 
 static u32& Torneko3CaptureCount(u32 pc)
@@ -752,9 +787,15 @@ void Torneko3DumpTargetVU1State(u32 pc)
 {
 	const Torneko3CaptureConfig& cfg = Torneko3Config();
 	u32& capture_count = Torneko3CaptureCount(pc);
-	if (capture_count >= cfg.max_captures_per_pc || !Torneko3TargetStateMatches(pc))
+	if (capture_count >= cfg.max_captures_per_pc)
 		return;
+	if (!Torneko3TargetStateMatches(pc))
+	{
+		Torneko3TraceAttempt(pc, "filtered");
+		return;
+	}
 	const u32 capture_index = capture_count++;
+	Torneko3TraceAttempt(pc, "captured");
 
 	const char* dir = cfg.dir;
 	const char* name = Torneko3CaptureName(pc);
