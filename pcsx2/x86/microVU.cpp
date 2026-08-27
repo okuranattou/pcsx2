@@ -879,7 +879,13 @@ void Torneko3DumpTargetVU1State(u32 pc)
 	std::fprintf(fp, "    \"q\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.q.UL, r.q.F);
 	std::fprintf(fp, "    \"p\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.p.UL, r.p.F);
 	std::fprintf(fp, "    \"pending_q\": \"0x%08x\",\n", r.pending_q);
-	std::fprintf(fp, "    \"pending_p\": \"0x%08x\"\n", r.pending_p);
+	std::fprintf(fp, "    \"pending_p\": \"0x%08x\",\n", r.pending_p);
+	std::fprintf(fp, "    \"mvu_q_instance\": %u,\n", m.q);
+	std::fprintf(fp, "    \"mvu_p_instance\": %u,\n", m.p);
+	std::fprintf(fp, "    \"active_q\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.q.UL, r.q.F);
+	std::fprintf(fp, "    \"pending_q_value\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.pending_q, Torneko3RawToFloat(r.pending_q));
+	std::fprintf(fp, "    \"active_p\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.p.UL, r.p.F);
+	std::fprintf(fp, "    \"pending_p_value\": {\"raw\": \"0x%08x\", \"float\": %.9g}\n", r.pending_p, Torneko3RawToFloat(r.pending_p));
 	std::fprintf(fp, "  },\n");
 	std::fprintf(fp, "  \"flags\": {\n");
 	std::fprintf(fp, "    \"macflag\": \"0x%08x\", \"statusflag\": \"0x%08x\", \"clipflag\": \"0x%08x\",\n", r.macflag, r.statusflag, r.clipflag);

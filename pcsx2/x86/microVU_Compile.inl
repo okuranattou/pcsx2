@@ -882,6 +882,7 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 		{
 			Torneko3TraceCompileVU1State(xPC);
 			mVU.regAlloc->flushAll(false);
+			mVUsavePQRegs(mVU);
 			mVUbackupRegs(mVU, true);
 			xFastCall(Torneko3DumpTargetVU1State, xPC);
 			mVUrestoreRegs(mVU, true);

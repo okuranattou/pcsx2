@@ -261,6 +261,31 @@ __fi void mVUrestoreRegs(microVU& mVU, bool fromMemory = false, bool onlyNeeded 
 	}
 }
 
+__fi void mVUsavePQRegs(microVU& mVU)
+{
+	const int qInst = mVU.q;
+	const int pInst = mVU.p;
+	xMOVAPS(ptr128[&mVU.xmmBackup[xmmPQ.Id][0]], xmmPQ);
+
+	if (qInst)
+		xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
+	xMOVSS(ptr32[&mVU.regs().VI[REG_Q].UL], xmmPQ);
+	xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
+	xMOVSS(ptr32[&mVU.regs().pending_q], xmmPQ);
+	xMOVAPS(xmmPQ, ptr128[&mVU.xmmBackup[xmmPQ.Id][0]]);
+
+	if (mVU.index == 1)
+	{
+		if (pInst)
+			xPSHUF.D(xmmPQ, xmmPQ, 0xb4);
+		xPSHUF.D(xmmPQ, xmmPQ, 0xC6);
+		xMOVSS(ptr32[&mVU.regs().VI[REG_P].UL], xmmPQ);
+		xPSHUF.D(xmmPQ, xmmPQ, 0x87);
+		xMOVSS(ptr32[&mVU.regs().pending_p], xmmPQ);
+		xMOVAPS(xmmPQ, ptr128[&mVU.xmmBackup[xmmPQ.Id][0]]);
+	}
+}
+
 #if 0
 // Gets called by mVUaddrFix at execution-time
 static void mVUwarningRegAccess(u32 prog, u32 pc)
