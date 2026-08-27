@@ -718,7 +718,10 @@ static u32& Torneko3CaptureCount(u32 pc)
 	static u32 pc0180 = 0;
 	static u32 pc0188 = 0;
 	static u32 pc0208 = 0;
+	static u32 pc0250 = 0;
 	static u32 pc0258 = 0;
+	static u32 pc02b0 = 0;
+	static u32 pc02c0 = 0;
 	static u32 pc02e8 = 0;
 	static u32 pc02f0 = 0;
 	static u32 pc02f8 = 0;
@@ -742,7 +745,10 @@ static u32& Torneko3CaptureCount(u32 pc)
 		case 0x0180: return pc0180;
 		case 0x0188: return pc0188;
 		case 0x0208: return pc0208;
+		case 0x0250: return pc0250;
 		case 0x0258: return pc0258;
+		case 0x02b0: return pc02b0;
+		case 0x02c0: return pc02c0;
 		case 0x02e8: return pc02e8;
 		case 0x02f0: return pc02f0;
 		case 0x02f8: return pc02f8;
@@ -770,7 +776,10 @@ static const char* Torneko3CaptureName(u32 pc)
 		case 0x0180: return "pc0180_vertex0";
 		case 0x0188: return "pc0188_vertex0";
 		case 0x0208: return "pc0208_vertex0";
+		case 0x0250: return "pc0250_vertex0";
 		case 0x0258: return "pc0258_vertex0";
+		case 0x02b0: return "pc02b0_vertex0";
+		case 0x02c0: return "pc02c0_vertex0";
 		case 0x02e8: return "pc02e8_vertex0";
 		case 0x02f0: return "pc02f0_vertex0";
 		case 0x02f8: return "pc02f8_vertex0";
