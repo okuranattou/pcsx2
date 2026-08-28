@@ -847,6 +847,8 @@ void Torneko3DumpTargetVU1State(u32 pc)
 
 	const VURegs& r = vuRegs[1];
 	const microVU& m = microVU1;
+	const microOp& op = m.prog.IRinfo.info[pc / 8];
+	const u32* pq = &m.xmmBackup[xmmPQ.Id][0];
 	std::fprintf(fp, "{\n");
 	std::fprintf(fp, "  \"pc_before\": \"0x%04x\",\n", pc);
 	std::fprintf(fp, "  \"capture_index\": %u,\n", capture_index);
@@ -891,6 +893,10 @@ void Torneko3DumpTargetVU1State(u32 pc)
 	std::fprintf(fp, "    \"pending_p\": \"0x%08x\",\n", r.pending_p);
 	std::fprintf(fp, "    \"mvu_q_instance\": %u,\n", m.q);
 	std::fprintf(fp, "    \"mvu_p_instance\": %u,\n", m.p);
+	std::fprintf(fp, "    \"mvu_read_q_instance\": %d,\n", op.readQ);
+	std::fprintf(fp, "    \"mvu_write_q_instance\": %d,\n", op.writeQ);
+	std::fprintf(fp, "    \"xmmpq_raw\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n", pq[0], pq[1], pq[2], pq[3]);
+	std::fprintf(fp, "    \"xmmpq_float\": [%.9g, %.9g, %.9g, %.9g],\n", Torneko3RawToFloat(pq[0]), Torneko3RawToFloat(pq[1]), Torneko3RawToFloat(pq[2]), Torneko3RawToFloat(pq[3]));
 	std::fprintf(fp, "    \"active_q\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.q.UL, r.q.F);
 	std::fprintf(fp, "    \"pending_q_value\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.pending_q, Torneko3RawToFloat(r.pending_q));
 	std::fprintf(fp, "    \"active_p\": {\"raw\": \"0x%08x\", \"float\": %.9g},\n", r.p.UL, r.p.F);
