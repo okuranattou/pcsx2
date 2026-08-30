@@ -879,7 +879,7 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 			xPC == 0x02c8 || xPC == 0x02d0 || xPC == 0x02d8 || xPC == 0x02e0 || xPC == 0x02e8 || xPC == 0x02f0 || xPC == 0x02f8 ||
 			xPC == 0x0340 || xPC == 0x0348 || xPC == 0x0350 || xPC == 0x03f0 || xPC == 0x0428 || xPC == 0x0430 || xPC == 0x0450 || xPC == 0x0458 || xPC == 0x0460 || xPC == 0x0468 ||
 			xPC == 0x0480 || xPC == 0x0488 || xPC == 0x0490 || xPC == 0x04e8 || xPC == 0x04f0 ||
-			xPC == 0x0818 || xPC == 0x0820 || xPC == 0x0838 || xPC == 0x0840))
+			xPC == 0x0818 || xPC == 0x0820 || xPC == 0x0838 || xPC == 0x0840 || xPC == 0x0a80))
 		{
 			Torneko3TraceCompileVU1State(xPC);
 			mVU.regAlloc->flushAll(false);

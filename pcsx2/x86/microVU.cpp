@@ -768,6 +768,7 @@ static u32& Torneko3CaptureCount(u32 pc)
 	static u32 pc0820 = 0;
 	static u32 pc0838 = 0;
 	static u32 pc0840 = 0;
+	static u32 pc0a80 = 0;
 	static u32 unknown = 0;
 
 	switch (pc)
@@ -819,6 +820,7 @@ static u32& Torneko3CaptureCount(u32 pc)
 		case 0x0820: return pc0820;
 		case 0x0838: return pc0838;
 		case 0x0840: return pc0840;
+		case 0x0a80: return pc0a80;
 		default: return unknown;
 	}
 }
@@ -874,6 +876,7 @@ static const char* Torneko3CaptureName(u32 pc)
 		case 0x0820: return "xtop_pc0820";
 		case 0x0838: return "target_pc0838";
 		case 0x0840: return "target_pc0840";
+		case 0x0a80: return "pc0a80_xgkick";
 		default: return "unknown_pc";
 	}
 }
