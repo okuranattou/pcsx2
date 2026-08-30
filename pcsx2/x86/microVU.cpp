@@ -466,6 +466,8 @@ struct Torneko3CaptureConfig
 	u32 pc_count = 1;
 	bool require_q00a_xyz = true;
 	u32 q00a_xyz[3] = {0x3ee5e354, 0x400d6042, 0x4026d917};
+	bool require_vi4 = false;
+	u32 vi4 = 0x0000;
 	bool require_vi5 = true;
 	u32 vi5 = 0x0088;
 	bool require_gif_tag = false;
@@ -586,6 +588,10 @@ static const Torneko3CaptureConfig& Torneko3Config()
 				cfg.q00a_xyz[1] = Torneko3ParseU32(value, cfg.q00a_xyz[1]);
 			else if (StringUtil::Strcasecmp(key, "q00a_z") == 0)
 				cfg.q00a_xyz[2] = Torneko3ParseU32(value, cfg.q00a_xyz[2]);
+			else if (StringUtil::Strcasecmp(key, "require_vi4") == 0)
+				cfg.require_vi4 = Torneko3ParseBool(value, cfg.require_vi4);
+			else if (StringUtil::Strcasecmp(key, "vi4") == 0)
+				cfg.vi4 = Torneko3ParseU32(value, cfg.vi4);
 			else if (StringUtil::Strcasecmp(key, "require_vi5") == 0)
 				cfg.require_vi5 = Torneko3ParseBool(value, cfg.require_vi5);
 			else if (StringUtil::Strcasecmp(key, "vi5") == 0)
@@ -624,6 +630,7 @@ static const Torneko3CaptureConfig& Torneko3Config()
 			std::fprintf(fp, "ini=%s\n", cfg.ini_path);
 			std::fprintf(fp, "pcs=%u\n", cfg.pc_count);
 			std::fprintf(fp, "require_q00a_xyz=%d\n", cfg.require_q00a_xyz ? 1 : 0);
+			std::fprintf(fp, "require_vi4=%d\n", cfg.require_vi4 ? 1 : 0);
 			std::fprintf(fp, "require_vi5=%d\n", cfg.require_vi5 ? 1 : 0);
 			std::fprintf(fp, "require_gif_tag=%d\n", cfg.require_gif_tag ? 1 : 0);
 			std::fclose(fp);
@@ -671,8 +678,11 @@ static bool Torneko3TargetStateMatches(u32 pc)
 		return false;
 
 	const VURegs& r = vuRegs[1];
+	const u32 vi4 = r.VI[4].UL & 0xffff;
 	const u32 vi5 = r.VI[5].UL & 0xffff;
 	const Torneko3CaptureConfig& cfg = Torneko3Config();
+	if (cfg.require_vi4 && vi4 != cfg.vi4)
+		return false;
 	return !cfg.require_vi5 || vi5 == cfg.vi5;
 }
 
@@ -687,7 +697,7 @@ static void Torneko3TraceAttempt(u32 pc, const char* result)
 #endif
 	if (std::FILE* fp = std::fopen(path, "ab"))
 	{
-		std::fprintf(fp, "pc=0x%04x result=%s vi5=0x%04x\n", pc, result, vuRegs[1].VI[5].UL & 0xffff);
+		std::fprintf(fp, "pc=0x%04x result=%s vi4=0x%04x vi5=0x%04x\n", pc, result, vuRegs[1].VI[4].UL & 0xffff, vuRegs[1].VI[5].UL & 0xffff);
 		std::fclose(fp);
 	}
 }
@@ -703,8 +713,8 @@ void Torneko3TraceCompileVU1State(u32 pc)
 #endif
 	if (std::FILE* fp = std::fopen(path, "ab"))
 	{
-		std::fprintf(fp, "pc=0x%04x cfgpcs=%u req_q00a=%d req_vi5=%d req_gif=%d\n",
-			pc, cfg.pc_count, cfg.require_q00a_xyz ? 1 : 0, cfg.require_vi5 ? 1 : 0, cfg.require_gif_tag ? 1 : 0);
+		std::fprintf(fp, "pc=0x%04x cfgpcs=%u req_q00a=%d req_vi4=%d req_vi5=%d req_gif=%d\n",
+			pc, cfg.pc_count, cfg.require_q00a_xyz ? 1 : 0, cfg.require_vi4 ? 1 : 0, cfg.require_vi5 ? 1 : 0, cfg.require_gif_tag ? 1 : 0);
 		std::fclose(fp);
 	}
 }
@@ -925,8 +935,8 @@ void Torneko3DumpTargetVU1State(u32 pc)
 	std::fprintf(fp, "  \"pc_before\": \"0x%04x\",\n", pc);
 	std::fprintf(fp, "  \"capture_index\": %u,\n", capture_index);
 	std::fprintf(fp, "  \"capture_stage\": \"strip0_runtime_transform\",\n");
-	std::fprintf(fp, "  \"config\": {\"require_q00a_xyz\": %s, \"require_vi5\": %s, \"vi5\": \"0x%04x\", \"require_gif_tag\": %s, \"gif_qword\": \"0x%03x\", \"gif_nloop\": %u, \"gif_flg\": %u, \"gif_nreg\": %u, \"gif_regs_mask\": \"0x%llx\", \"gif_regs_value\": \"0x%llx\", \"max_captures_per_pc\": %u},\n",
-		cfg.require_q00a_xyz ? "true" : "false", cfg.require_vi5 ? "true" : "false", cfg.vi5,
+	std::fprintf(fp, "  \"config\": {\"require_q00a_xyz\": %s, \"require_vi4\": %s, \"vi4\": \"0x%04x\", \"require_vi5\": %s, \"vi5\": \"0x%04x\", \"require_gif_tag\": %s, \"gif_qword\": \"0x%03x\", \"gif_nloop\": %u, \"gif_flg\": %u, \"gif_nreg\": %u, \"gif_regs_mask\": \"0x%llx\", \"gif_regs_value\": \"0x%llx\", \"max_captures_per_pc\": %u},\n",
+		cfg.require_q00a_xyz ? "true" : "false", cfg.require_vi4 ? "true" : "false", cfg.vi4, cfg.require_vi5 ? "true" : "false", cfg.vi5,
 		cfg.require_gif_tag ? "true" : "false", cfg.gif_qword, cfg.gif_nloop, cfg.gif_flg, cfg.gif_nreg,
 		static_cast<unsigned long long>(cfg.gif_regs_mask), static_cast<unsigned long long>(cfg.gif_regs_value), cfg.max_captures_per_pc);
 	std::fprintf(fp, "  \"target_signature\": {\"q00a_xyz_raw\": [\"0x%08x\", \"0x%08x\", \"0x%08x\"]},\n", cfg.q00a_xyz[0], cfg.q00a_xyz[1], cfg.q00a_xyz[2]);
