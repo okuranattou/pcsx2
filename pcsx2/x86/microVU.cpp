@@ -7,11 +7,15 @@
 #include "common/Perf.h"
 #include "common/StringUtil.h"
 
+#include "vtlb.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
 #include <cctype>
+#include <string>
+#include <vector>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -894,6 +898,165 @@ static void Torneko3WriteMemQwordJson(std::FILE* fp, const char* name, u32 qaddr
 		name, qaddr, q[0], q[1], q[2], q[3], Torneko3RawToFloat(q[0]), Torneko3RawToFloat(q[1]), Torneko3RawToFloat(q[2]), Torneko3RawToFloat(q[3]));
 }
 
+static bool Torneko3ReadEEMemory(u32 ee_addr, void* dst, u32 size)
+{
+	return vtlb_memSafeReadBytes(ee_addr, dst, size);
+}
+
+static void Torneko3WriteBinaryFile(const char* path, const void* data, size_t size)
+{
+	if (std::FILE* fp = std::fopen(path, "wb"))
+	{
+		std::fwrite(data, 1, size, fp);
+		std::fclose(fp);
+	}
+}
+
+static std::string Torneko3MakePath(const char* dir, const char* stem, const char* suffix)
+{
+	char path[768];
+#ifdef _WIN32
+	std::snprintf(path, sizeof(path), "%s\\%s%s", dir, stem, suffix);
+#else
+	std::snprintf(path, sizeof(path), "%s/%s%s", dir, stem, suffix);
+#endif
+	return std::string(path);
+}
+
+static u32 Torneko3ReadU32LE(const u8* p)
+{
+	return static_cast<u32>(p[0]) |
+		(static_cast<u32>(p[1]) << 8) |
+		(static_cast<u32>(p[2]) << 16) |
+		(static_cast<u32>(p[3]) << 24);
+}
+
+static const char* Torneko3DmaTagName(u32 dma_id)
+{
+	switch (dma_id)
+	{
+		case 0: return "REFE";
+		case 1: return "CNT";
+		case 2: return "NEXT";
+		case 3: return "REF";
+		case 4: return "REFS";
+		case 5: return "CALL";
+		case 6: return "RET";
+		case 7: return "END";
+		default: return "UNKNOWN";
+	}
+}
+
+static void Torneko3DumpCurrentDgDmaPayloads(const char* dir, const char* stem)
+{
+	constexpr u32 dg_dma_base = 0x00895980;
+	constexpr u32 dg_dma_size = 0x00021a20;
+
+	std::vector<u8> chain(dg_dma_size);
+	if (!Torneko3ReadEEMemory(dg_dma_base, chain.data(), dg_dma_size))
+		return;
+
+	const std::string chain_path = Torneko3MakePath(dir, stem, "_ee_dgdma.bin");
+	Torneko3WriteBinaryFile(chain_path.c_str(), chain.data(), chain.size());
+
+	const std::string manifest_path = Torneko3MakePath(dir, stem, "_ee_dgdma_manifest.json");
+	std::FILE* fp = std::fopen(manifest_path.c_str(), "wb");
+	if (!fp)
+		return;
+
+	std::fprintf(fp, "{\n");
+	std::fprintf(fp, "  \"dg_dma_base\": \"0x%08x\",\n", dg_dma_base);
+	std::fprintf(fp, "  \"dg_dma_size\": \"0x%08x\",\n", dg_dma_size);
+	std::fprintf(fp, "  \"chain_file\": \"%s_ee_dgdma.bin\",\n", stem);
+	std::fprintf(fp, "  \"segments\": [\n");
+
+	u32 offset = 0;
+	bool first_segment = true;
+	for (u32 index = 0; index < 512 && offset + 16 <= dg_dma_size; index++)
+	{
+		const u8* tag = &chain[offset];
+		const u32 low = Torneko3ReadU32LE(tag + 0);
+		const u32 addr = Torneko3ReadU32LE(tag + 4) & 0x7fffffff;
+		const u32 upper0 = Torneko3ReadU32LE(tag + 8);
+		const u32 upper1 = Torneko3ReadU32LE(tag + 12);
+		const u32 qwc = low & 0xffff;
+		const u32 dma_id = (low >> 28) & 0x7;
+		const u32 payload_size = qwc * 16;
+		const u32 next_offset = offset + 16;
+		bool has_inline_payload = false;
+		bool has_ref_payload = false;
+		u32 payload_ee_addr = 0;
+		std::string payload_file;
+
+		if (dma_id == 1 || dma_id == 7)
+		{
+			has_inline_payload = (next_offset + payload_size <= dg_dma_size);
+		}
+		else if (dma_id == 0 || dma_id == 3 || dma_id == 4)
+		{
+			has_ref_payload = true;
+			payload_ee_addr = addr;
+			if (payload_size != 0)
+			{
+				std::vector<u8> payload(payload_size);
+				if (Torneko3ReadEEMemory(payload_ee_addr, payload.data(), payload_size))
+				{
+					char suffix[128];
+					std::snprintf(suffix, sizeof(suffix), "_seg%03u_ref_%08x_qwc%04x.bin", index, payload_ee_addr, qwc);
+					payload_file = suffix;
+					const std::string payload_path = Torneko3MakePath(dir, stem, suffix);
+					Torneko3WriteBinaryFile(payload_path.c_str(), payload.data(), payload.size());
+				}
+			}
+		}
+
+		if (!first_segment)
+			std::fprintf(fp, ",\n");
+		first_segment = false;
+
+		std::fprintf(fp, "    {\n");
+		std::fprintf(fp, "      \"index\": %u,\n", index);
+		std::fprintf(fp, "      \"tag_ee_addr\": \"0x%08x\",\n", dg_dma_base + offset);
+		std::fprintf(fp, "      \"tag_offset\": \"0x%08x\",\n", offset);
+		std::fprintf(fp, "      \"tag_low\": \"0x%08x\",\n", low);
+		std::fprintf(fp, "      \"tag_addr\": \"0x%08x\",\n", addr);
+		std::fprintf(fp, "      \"qwc\": %u,\n", qwc);
+		std::fprintf(fp, "      \"dma_id\": %u,\n", dma_id);
+		std::fprintf(fp, "      \"dma_name\": \"%s\",\n", Torneko3DmaTagName(dma_id));
+		std::fprintf(fp, "      \"upper_vif_words\": [\"0x%08x\", \"0x%08x\"],\n", upper0, upper1);
+		if (has_inline_payload)
+			std::fprintf(fp, "      \"inline_payload_ee_addr\": \"0x%08x\",\n", dg_dma_base + next_offset);
+		else
+			std::fprintf(fp, "      \"inline_payload_ee_addr\": null,\n");
+		if (has_ref_payload)
+			std::fprintf(fp, "      \"ref_payload_ee_addr\": \"0x%08x\",\n", payload_ee_addr);
+		else
+			std::fprintf(fp, "      \"ref_payload_ee_addr\": null,\n");
+		std::fprintf(fp, "      \"payload_size\": \"0x%08x\",\n", payload_size);
+		if (!payload_file.empty())
+			std::fprintf(fp, "      \"payload_file\": \"%s%s\",\n", stem, payload_file.c_str());
+		else
+			std::fprintf(fp, "      \"payload_file\": null,\n");
+		std::fprintf(fp, "      \"payload_capture_ok\": %s\n", (!payload_file.empty() || (!has_ref_payload && !has_inline_payload)) ? "true" : "false");
+		std::fprintf(fp, "    }");
+
+		if (dma_id == 0 || dma_id == 7)
+			break;
+
+		if (dma_id == 1 || dma_id == 7 || dma_id == 2)
+			offset = next_offset + payload_size;
+		else
+			offset = next_offset;
+
+		if (offset > dg_dma_size)
+			break;
+	}
+
+	std::fprintf(fp, "\n  ]\n");
+	std::fprintf(fp, "}\n");
+	std::fclose(fp);
+}
+
 void Torneko3DumpTargetVU1State(u32 pc)
 {
 	const Torneko3CaptureConfig& cfg = Torneko3Config();
@@ -910,12 +1073,15 @@ void Torneko3DumpTargetVU1State(u32 pc)
 
 	const char* dir = cfg.dir;
 	const char* name = Torneko3CaptureName(pc);
+	char stem[512];
 	char json_path[512];
 	char mem_path[512];
 #ifdef _WIN32
+	std::snprintf(stem, sizeof(stem), "%s_%03u", name, capture_index);
 	std::snprintf(json_path, sizeof(json_path), "%s\\%s_%03u_regs.json", dir, name, capture_index);
 	std::snprintf(mem_path, sizeof(mem_path), "%s\\%s_%03u_vumem.bin", dir, name, capture_index);
 #else
+	std::snprintf(stem, sizeof(stem), "%s_%03u", name, capture_index);
 	std::snprintf(json_path, sizeof(json_path), "%s/%s_%03u_regs.json", dir, name, capture_index);
 	std::snprintf(mem_path, sizeof(mem_path), "%s/%s_%03u_vumem.bin", dir, name, capture_index);
 #endif
@@ -925,6 +1091,9 @@ void Torneko3DumpTargetVU1State(u32 pc)
 		std::fwrite(vuRegs[1].Mem, 1, 0x4000, mem);
 		std::fclose(mem);
 	}
+
+	if (pc == 0x0a80)
+		Torneko3DumpCurrentDgDmaPayloads(dir, stem);
 
 	std::FILE* fp = std::fopen(json_path, "wb");
 	if (!fp)
